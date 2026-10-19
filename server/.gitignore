@@ -1,0 +1,4 @@
+.env
+node_modules/
+data/users.json
+data/properties.json
