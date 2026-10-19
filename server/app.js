@@ -17,19 +17,30 @@ if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
 
 const allowedClientOrigin = process.env.CLIENT_URL || "http://localhost:5173";
 
-app.use(cors({
-  origin(origin, callback) {
-    const isLocalDevelopmentOrigin =
-      process.env.NODE_ENV !== "production" &&
-      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin || "");
+app.use(
+  cors({
+    origin(origin, callback) {
+      const allowedOrigins = [
+        allowedClientOrigin,
+        "https://my-property-manager-my-property-manager.vercel.app",
+      ];
 
-    if (!origin || origin === allowedClientOrigin || isLocalDevelopmentOrigin) {
-      return callback(null, true);
-    }
+      const isLocalDevelopmentOrigin =
+        process.env.NODE_ENV !== "production" &&
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin || "");
 
-    return callback(new Error("Origin is not allowed by CORS"));
-  },
-}));
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        isLocalDevelopmentOrigin
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Origin is not allowed by CORS"));
+    },
+  }),
+);
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/properties", propertyRoutes);
