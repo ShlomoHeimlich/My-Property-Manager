@@ -120,13 +120,12 @@ function pieGradient(slices: Array<{ amount: number; color: string }>) {
 function CategoryPie({
   title,
   type,
-  transactions,
+  slices,
 }: {
   title: string;
   type: "income" | "expense";
-  transactions: PropertyTransaction[];
+  slices: Array<{ label: string; amount: number; color: string }>;
 }) {
-  const slices = getPieSlices(transactions, type);
   const total = slices.reduce((sum, slice) => sum + slice.amount, 0);
 
   return (
@@ -464,11 +463,6 @@ export default function PropertiesPage({
       }
       setTransactionDraft({
         type: transactionDraft.type,
-        category: transactionDraft.category,
-        customCategory:
-          transactionDraft.category === "other"
-            ? transactionDraft.customCategory.trim()
-            : null,
         category: "",
         customCategory: "",
         description: "",
@@ -1089,12 +1083,12 @@ export default function PropertiesPage({
                   <CategoryPie
                     title="חלוקת הכנסות לפי קטגוריה"
                     type="income"
-                    transactions={yearlyTransactions}
+                    slices={yearlyIncomeSlices}
                   />
                   <CategoryPie
                     title="חלוקת הוצאות לפי קטגוריה"
                     type="expense"
-                    transactions={yearlyTransactions}
+                    slices={yearlyExpenseSlices}
                   />
                 </div>
                 <section className="transaction-list yearly-month-list">
