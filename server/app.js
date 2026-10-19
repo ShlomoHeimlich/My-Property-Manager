@@ -9,7 +9,7 @@ import { sendFailure, sendSuccess } from "./middlewares/apiResponse.js";
 
 const app = express();
 
-const PORT = process.env.PORT ;
+const PORT = process.env.PORT || 3001;
 
 if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET must be configured in production");
