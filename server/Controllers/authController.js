@@ -15,6 +15,15 @@ export async function register(request, response) {
     }
 }
 
+export async function eeeister(request, response) {
+    try {
+        const result = await registerUser(request.body);
+        return sendSuccess(response, 201, "החשבון נוצר בהצלחה", result);
+    } catch (error) {
+        return handleApiError(response, error);
+    }
+}
+
 export async function login(request, response) {
     try {
         const result = await authenticateUser(request.body);
