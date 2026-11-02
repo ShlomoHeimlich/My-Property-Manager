@@ -46,7 +46,7 @@ export const dataSource = new DataSource({
     ssl: useSsl ? { rejectUnauthorized: false } : false,
     entities: [User, Property, PropertyTransaction],
     migrations: [InitialSchema1710000000000, TransactionCategories1720000000000],
-    migrationsRun: true,
+    migrationsRun: false,
     synchronize: false,
     logging: process.env.NODE_ENV === "development",
 });

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Between } from "typeorm";
-import { PROPERTY_STATUSES, PROPERTY_TYPES, toPublicProperty } from "../Models/Property.js";
+import { PROPERTY_STATUSES, PROPERTY_TYPES, toPublicProperty } from "../Models/propertyData.js";
 import {
     addTransaction as storeTransaction,
     findPropertyById,
@@ -157,8 +156,11 @@ export async function getPropertyTransactions(id, { month, year }, userId) {
     if (!property) throw new PropertyError(404, "הנכס לא נמצא");
     assertPropertyAccess(property, userId);
     const dateFilter = month
-        ? { date: Between(`${month}-01`, `${month}-${new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()}`) }
-        : { date: Between(`${year}-01-01`, `${year}-12-31`) };
+        ? {
+            startDate: `${month}-01`,
+            endDate: `${month}-${new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()}`,
+        }
+        : { startDate: `${year}-01-01`, endDate: `${year}-12-31` };
     return listStoredTransactions(id, dateFilter);
 }
 

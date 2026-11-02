@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { randomUUID } from "node:crypto";
-import { toPublicUser } from "../Models/User.js";
+import { toPublicUser } from "../Models/userData.js";
 import { createAccessToken } from "./tokenService.js";
 import { findUserByEmail, findUserById, saveUser } from "./userStore.js";
 
@@ -35,7 +35,9 @@ export async function registerUser(input = {}) {
         email,
         passwordHash: await bcrypt.hash(password, 12),
     };
-    await saveUser(user);
+    if (!(await saveUser(user))) {
+        throw new AuthError(409, "כבר קיים חשבון עם כתובת האימייל הזו");
+    }
 
     return { token: createAccessToken(user), user: toPublicUser(user) };
 }

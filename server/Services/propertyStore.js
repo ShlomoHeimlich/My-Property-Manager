@@ -1,48 +1,60 @@
-import { IsNull } from "typeorm";
-import { dataSource } from "../database/dataSource.js";
-import Property from "../Models/Property.js";
-import PropertyTransaction from "../Models/PropertyTransaction.js";
-
-const properties = () => dataSource.getRepository(Property);
-const transactions = () => dataSource.getRepository(PropertyTransaction);
+import { readJsonStore, updateJsonStore } from "./jsonStore.js";
 
 export async function listProperties(userId, includeInactive = false) {
-    const statusFilter = includeInactive ? {} : { status: "active" };
-    return properties().find({
-        where: [
-            { createdBy: userId, ...statusFilter },
-            { createdBy: IsNull(), ...statusFilter },
-        ],
-        order: { updatedAt: "DESC" },
-    });
+    return readJsonStore().properties
+        .filter((property) => property.createdBy === userId || !property.createdBy)
+        .filter((property) => includeInactive || property.status === "active")
+        .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
 }
 
 export async function findPropertyById(id) {
-    return properties().findOneBy({ id });
+    return readJsonStore().properties.find((property) => property.id === id) ?? null;
 }
 
 export async function saveProperty(property) {
-    return properties().save(property);
+    return updateJsonStore((store) => {
+        store.properties.push(property);
+        return property;
+    });
 }
 
 export async function updateProperty(id, updates) {
     const { removeLegacyOwners: _removeLegacyOwners, ...propertyUpdates } = updates;
-    await properties().update({ id }, propertyUpdates);
-    return findPropertyById(id);
-}
-
-export async function addTransaction(propertyId, transaction) {
-    return transactions().save({ ...transaction, property: { id: propertyId } });
-}
-
-export async function listTransactions(propertyId, where = {}) {
-    return transactions().find({
-        where: { ...where, property: { id: propertyId } },
-        order: { date: "DESC", createdAt: "DESC" },
+    return updateJsonStore((store) => {
+        const property = store.properties.find((savedProperty) => savedProperty.id === id);
+        if (!property) return null;
+        Object.assign(property, propertyUpdates);
+        if (updates.removeLegacyOwners) delete property.owners;
+        return property;
     });
 }
 
+export async function addTransaction(propertyId, transaction) {
+    return updateJsonStore((store) => {
+        const savedTransaction = { ...transaction, propertyId };
+        store.transactions.push(savedTransaction);
+        return savedTransaction;
+    });
+}
+
+export async function listTransactions(propertyId, where = {}) {
+    return readJsonStore().transactions
+        .filter((transaction) => transaction.propertyId === propertyId)
+        .filter((transaction) => !where.startDate || transaction.date >= where.startDate)
+        .filter((transaction) => !where.endDate || transaction.date <= where.endDate)
+        .sort((left, right) =>
+            String(right.date).localeCompare(String(left.date)) ||
+            String(right.createdAt).localeCompare(String(left.createdAt)),
+        );
+}
+
 export async function removeTransaction(propertyId, transactionId) {
-    const result = await transactions().delete({ id: transactionId, property: { id: propertyId } });
-    return result.affected > 0;
+    return updateJsonStore((store) => {
+        const index = store.transactions.findIndex(
+            (transaction) => transaction.id === transactionId && transaction.propertyId === propertyId,
+        );
+        if (index < 0) return false;
+        store.transactions.splice(index, 1);
+        return true;
+    });
 }

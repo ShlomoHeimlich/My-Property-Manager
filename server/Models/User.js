@@ -1,4 +1,7 @@
 import { EntitySchema } from "typeorm";
+import { toPublicUser } from "./userData.js";
+
+export { toPublicUser };
 
 export const User = new EntitySchema({
     name: "User",
@@ -13,7 +16,3 @@ export const User = new EntitySchema({
 });
 
 export default User;
-
-export function toPublicUser(user) {
-    return { id: user.id, name: user.name, email: user.email };
-}

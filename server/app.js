@@ -3,8 +3,7 @@ import cors from "cors";
 import "dotenv/config";
 import authRoutes from "./Routes/authRoutes.js";
 import propertyRoutes from "./Routes/propertyRoutes.js";
-import { dataSource } from "./database/dataSource.js";
-import { importLegacyJsonData } from "./Services/legacyDataImport.js";
+import { initializeJsonStore } from "./Services/jsonStore.js";
 import { sendFailure, sendSuccess } from "./middlewares/apiResponse.js";
 
 const app = express();
@@ -76,13 +75,8 @@ app.use((error, _request, response, _next) => {
   return sendFailure(response, 500, "השרת לא הצליח להשלים את הפעולה. נסו שוב בעוד רגע.", "INTERNAL_SERVER_ERROR");
 });
 
-await dataSource.initialize();
-const legacyImport = await importLegacyJsonData();
-if (legacyImport.imported) {
-  console.log(`Imported legacy records into PostgreSQL: ${legacyImport.users} users, ${legacyImport.properties} properties`);
-}
+await initializeJsonStore();
 
-app.listen(PORT
-  , () => {
+app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

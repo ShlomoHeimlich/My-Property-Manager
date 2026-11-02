@@ -1,7 +1,7 @@
 import { EntitySchema } from "typeorm";
+import { PROPERTY_STATUSES, PROPERTY_TYPES, toPublicProperty } from "./propertyData.js";
 
-export const PROPERTY_TYPES = ["apartment", "house", "commercial", "land", "other"];
-export const PROPERTY_STATUSES = ["active", "archived", "sold"];
+export { PROPERTY_STATUSES, PROPERTY_TYPES, toPublicProperty };
 
 const numericTransformer = {
     to(value) { return value; },
@@ -42,22 +42,3 @@ export const Property = new EntitySchema({
 });
 
 export default Property;
-
-export function toPublicProperty(property) {
-    return {
-        id: property.id,
-        name: property.name,
-        address: property.address,
-        city: property.city,
-        type: property.type,
-        apartmentPrice: property.apartmentPrice ?? property.purchasePrice ?? null,
-        additionalCosts: property.additionalCosts ?? [],
-        purchaseDate: property.purchaseDate ?? "",
-        sizeSqm: property.sizeSqm ?? null,
-        rooms: property.rooms ?? null,
-        notes: property.notes ?? "",
-        status: property.status,
-        createdAt: property.createdAt,
-        updatedAt: property.updatedAt,
-    };
-}

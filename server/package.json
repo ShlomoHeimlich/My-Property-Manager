@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "nodemon --watch app.js --watch Controllers --watch middlewares --watch Models --watch Routes --watch Services --ext js,env app.js",
     "start": "node app.js",
+    "export:postgres-to-json": "node scripts/exportPostgresToJson.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
