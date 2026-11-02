@@ -1,3 +1,4 @@
+import { IsNull } from "typeorm";
 import { dataSource } from "../database/dataSource.js";
 import Property from "../Models/Property.js";
 import PropertyTransaction from "../Models/PropertyTransaction.js";
@@ -5,8 +6,15 @@ import PropertyTransaction from "../Models/PropertyTransaction.js";
 const properties = () => dataSource.getRepository(Property);
 const transactions = () => dataSource.getRepository(PropertyTransaction);
 
-export async function listProperties() {
-    return properties().find({ order: { updatedAt: "DESC" } });
+export async function listProperties(userId, includeInactive = false) {
+    const statusFilter = includeInactive ? {} : { status: "active" };
+    return properties().find({
+        where: [
+            { createdBy: userId, ...statusFilter },
+            { createdBy: IsNull(), ...statusFilter },
+        ],
+        order: { updatedAt: "DESC" },
+    });
 }
 
 export async function findPropertyById(id) {

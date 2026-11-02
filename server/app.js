@@ -41,6 +41,17 @@ app.use(
     },
   }),
 );
+app.use((request, response, next) => {
+  const startedAt = performance.now();
+  response.once("finish", () => {
+    const durationMs = Math.round(performance.now() - startedAt);
+    if (durationMs >= 500) {
+      const endpoint = `${request.baseUrl}${request.route?.path ?? ""}` || request.path;
+      console.warn(`[slow request] ${request.method} ${endpoint} ${response.statusCode} ${durationMs}ms`);
+    }
+  });
+  next();
+});
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/properties", propertyRoutes);

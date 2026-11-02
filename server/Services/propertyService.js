@@ -85,11 +85,9 @@ function normalizeDetails(input = {}) {
 }
 
 export async function getPropertiesForUser(userId, includeInactive = false) {
-    const properties = await listProperties();
+    const properties = await listProperties(userId, includeInactive);
     return Promise.all(properties
         .filter((property) => canAccessProperty(property, userId))
-        .filter((property) => includeInactive || property.status === "active")
-        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
         .map(serializeProperty));
 }
 
