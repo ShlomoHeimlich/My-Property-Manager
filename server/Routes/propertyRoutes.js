@@ -6,6 +6,7 @@ import {
     getOne,
     list,
     listTransactions,
+    remove,
     removeTransaction,
     setStatus,
     update,
@@ -19,6 +20,7 @@ router.post("/", create);
 router.get("/:id/transactions", listTransactions);
 router.post("/:id/transactions", addTransaction);
 router.delete("/:id/transactions/:transactionId", removeTransaction);
+router.delete("/:id", remove);
 router.get("/:id", getOne);
 router.put("/:id", update);
 router.patch("/:id/status", setStatus);

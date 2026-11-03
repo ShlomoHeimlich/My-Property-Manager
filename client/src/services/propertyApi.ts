@@ -8,12 +8,6 @@ export type PropertyType =
   | "land"
   | "other";
 
-export type AdditionalCost = {
-  id: string;
-  name: string;
-  amount: number;
-};
-
 export type PropertyTransaction = {
   id: string;
   type: "income" | "expense";
@@ -28,11 +22,9 @@ export type PropertyTransaction = {
 export type PropertyRecord = {
   id: string;
   name: string;
-  address: string;
-  city: string;
+  location: string;
   type: PropertyType;
-  apartmentPrice: number | null;
-  additionalCosts: AdditionalCost[];
+  totalInvestment: number | null;
   purchaseDate: string;
   sizeSqm: number | null;
   rooms: number | null;
@@ -47,14 +39,12 @@ export type PropertyInput = Omit<
   "id" | "status" | "createdAt" | "updatedAt" | "type" | "sizeSqm" | "rooms"
 > & {
   type?: PropertyType;
-  additionalCosts: Array<{ id?: string; name: string; amount: number }>;
 };
 
 export const propertyApi = {
-  async list(includeInactive = false) {
-    const query = includeInactive ? "?includeInactive=true" : "";
+  async list() {
     const result = await apiRequest<{ properties: PropertyRecord[] }>(
-      `/api/properties${query}`,
+      "/api/properties",
     );
     return result.properties;
   },
@@ -94,6 +84,14 @@ export const propertyApi = {
     return result.property;
   },
 
+  async delete(id: string, onSuccess?: (message: string) => void) {
+    await apiRequest<null>(
+      `/api/properties/${id}`,
+      { method: "DELETE" },
+      onSuccess,
+    );
+  },
+
   async setStatus(
     id: string,
     status: Exclude<PropertyStatus, "active">,
@@ -120,6 +118,13 @@ export const propertyApi = {
   async yearlyTransactions(id: string, year: number) {
     const result = await apiRequest<{ transactions: PropertyTransaction[] }>(
       `/api/properties/${id}/transactions?year=${year}`,
+    );
+    return result.transactions;
+  },
+
+  async allTransactions(id: string) {
+    const result = await apiRequest<{ transactions: PropertyTransaction[] }>(
+      `/api/properties/${id}/transactions?all=true`,
     );
     return result.transactions;
   },

@@ -29,6 +29,18 @@ export async function updateProperty(id, updates) {
     });
 }
 
+export async function deleteProperty(id) {
+    return updateJsonStore((store) => {
+        const index = store.properties.findIndex((property) => property.id === id);
+        if (index < 0) return null;
+        const [deletedProperty] = store.properties.splice(index, 1);
+        store.transactions = store.transactions.filter(
+            (transaction) => transaction.propertyId !== id,
+        );
+        return deletedProperty;
+    });
+}
+
 export async function addTransaction(propertyId, transaction) {
     return updateJsonStore((store) => {
         const savedTransaction = { ...transaction, propertyId };

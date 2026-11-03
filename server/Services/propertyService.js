@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { PROPERTY_STATUSES, PROPERTY_TYPES, toPublicProperty } from "../Models/propertyData.js";
 import {
     addTransaction as storeTransaction,
+    deleteProperty as deleteStoredProperty,
     findPropertyById,
     listProperties,
     listTransactions as listStoredTransactions,
@@ -33,20 +34,6 @@ function normalizeOptionalNumber(value, fieldName, { min = 0, max = Infinity } =
     return number;
 }
 
-function normalizeAdditionalCosts(inputCosts) {
-    if (inputCosts === undefined) return [];
-    if (!Array.isArray(inputCosts)) {
-        throw new PropertyError(400, "רשימת העלויות הנוספות אינה תקינה");
-    }
-
-    return inputCosts.map((cost) => {
-        const name = normalizeText(cost?.name, "שם העלות", undefined, true);
-        const amount = normalizeOptionalNumber(cost?.amount, name, { min: 0.01 });
-        if (amount === null) throw new PropertyError(400, `יש להזין סכום עבור ${name}`);
-        return { id: typeof cost.id === "string" ? cost.id : randomUUID(), name, amount };
-    });
-}
-
 function serializeProperty(property) {
     return toPublicProperty(property);
 }
@@ -65,18 +52,30 @@ function assertPropertyAccess(property, userId) {
 function normalizeDetails(input = {}) {
     const type = input.type || "apartment";
     if (!PROPERTY_TYPES.includes(type)) throw new PropertyError(400, "סוג הנכס אינו תקין");
+    const totalInvestment = normalizeOptionalNumber(
+        input.totalInvestment,
+        "סך ההון העצמי וההוצאות שהושקעו בדירה (כולל הכול)",
+        { min: 0 },
+    );
+    if (totalInvestment === null) {
+        throw new PropertyError(400, "יש להזין את סך ההון העצמי וההוצאות שהושקעו בדירה (כולל הכול)");
+    }
+    const purchaseDate = normalizeText(input.purchaseDate, "תאריך רכישה", 10, true);
+    const parsedPurchaseDate = new Date(`${purchaseDate}T00:00:00.000Z`);
+    if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(purchaseDate) ||
+        Number.isNaN(parsedPurchaseDate.getTime()) ||
+        parsedPurchaseDate.toISOString().slice(0, 10) !== purchaseDate
+    ) {
+        throw new PropertyError(400, "יש להזין תאריך רכישה תקין");
+    }
 
     return {
         name: normalizeText(input.name, "שם הנכס", 100, true),
-        address: normalizeText(input.address, "כתובת", 200, true),
-        city: normalizeText(input.city, "עיר", 100, true),
+        location: normalizeText(input.location, "כתובת ועיר", 300, true),
         type,
-        apartmentPrice: normalizeOptionalNumber(
-            input.apartmentPrice ?? input.purchasePrice,
-            "מחיר דירה",
-        ),
-        additionalCosts: normalizeAdditionalCosts(input.additionalCosts),
-        purchaseDate: normalizeText(input.purchaseDate, "תאריך רכישה", 10) || null,
+        totalInvestment,
+        purchaseDate,
         sizeSqm: normalizeOptionalNumber(input.sizeSqm, "שטח", { min: 0.1, max: 1000000 }),
         rooms: normalizeOptionalNumber(input.rooms, "מספר חדרים", { min: 0.1, max: 1000 }),
         notes: normalizeText(input.notes, "הערות", 5000),
@@ -126,6 +125,13 @@ export async function editProperty(id, input, userId) {
     return serializeProperty(updated);
 }
 
+export async function deleteProperty(id, userId) {
+    const property = await findPropertyById(id);
+    if (!property) throw new PropertyError(404, "הנכס לא נמצא");
+    assertPropertyAccess(property, userId);
+    await deleteStoredProperty(id);
+}
+
 export async function changePropertyStatus(id, status, userId) {
     if (!PROPERTY_STATUSES.includes(status) || status === "active") {
         throw new PropertyError(400, "ניתן לארכב נכס או לסמן אותו כנמכר");
@@ -142,25 +148,28 @@ export async function changePropertyStatus(id, status, userId) {
     return serializeProperty(updated);
 }
 
-export async function getPropertyTransactions(id, { month, year }, userId) {
+export async function getPropertyTransactions(id, { month, year, all }, userId) {
     if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
         throw new PropertyError(400, "יש לבחור חודש תקין");
     }
     if (year && !/^\d{4}$/.test(year)) {
         throw new PropertyError(400, "יש לבחור שנה תקינה");
     }
-    if (Boolean(month) === Boolean(year)) {
-        throw new PropertyError(400, "יש לבחור חודש או שנה לסינון");
+    const selectedFilters = [Boolean(month), Boolean(year), all === "true"].filter(Boolean).length;
+    if (selectedFilters !== 1) {
+        throw new PropertyError(400, "יש לבחור חודש, שנה או סיכום של כל השנים");
     }
     const property = await findPropertyById(id);
     if (!property) throw new PropertyError(404, "הנכס לא נמצא");
     assertPropertyAccess(property, userId);
-    const dateFilter = month
-        ? {
+    const dateFilter = all === "true"
+        ? (property.purchaseDate ? { startDate: String(property.purchaseDate).slice(0, 10) } : {})
+        : month
+            ? {
             startDate: `${month}-01`,
             endDate: `${month}-${new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()}`,
-        }
-        : { startDate: `${year}-01-01`, endDate: `${year}-12-31` };
+            }
+            : { startDate: `${year}-01-01`, endDate: `${year}-12-31` };
     return listStoredTransactions(id, dateFilter);
 }
 
@@ -198,8 +207,16 @@ export async function createTransaction(id, input = {}, userId) {
     const amount = normalizeOptionalNumber(input.amount, "סכום", { min: 0.01 });
     if (amount === null) throw new PropertyError(400, "יש להזין סכום חיובי");
     const date = typeof input.date === "string" ? input.date : "";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00`))) {
+    const parsedDate = new Date(`${date}T00:00:00.000Z`);
+    if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        Number.isNaN(parsedDate.getTime()) ||
+        parsedDate.toISOString().slice(0, 10) !== date
+    ) {
         throw new PropertyError(400, "יש להזין תאריך תקין");
+    }
+    if (property.purchaseDate && date < String(property.purchaseDate).slice(0, 10)) {
+        throw new PropertyError(400, "תאריך התנועה לא יכול להיות לפני תאריך רכישת הנכס");
     }
 
     const transaction = {

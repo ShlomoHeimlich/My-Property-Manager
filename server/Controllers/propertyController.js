@@ -2,6 +2,7 @@ import {
     changePropertyStatus,
     createTransaction,
     createProperty,
+    deleteProperty,
     deleteTransaction,
     editProperty,
     getPropertiesForUser,
@@ -47,6 +48,15 @@ export async function update(request, response) {
     }
 }
 
+export async function remove(request, response) {
+    try {
+        await deleteProperty(request.params.id, request.auth.sub);
+        return sendSuccess(response, 200, "הנכס נמחק בהצלחה");
+    } catch (error) {
+        return handleApiError(response, error);
+    }
+}
+
 export async function setStatus(request, response) {
     try {
         const property = await changePropertyStatus(
@@ -65,7 +75,7 @@ export async function listTransactions(request, response) {
     try {
         const transactions = await getPropertyTransactions(
             request.params.id,
-            { month: request.query.month, year: request.query.year },
+            { month: request.query.month, year: request.query.year, all: request.query.all },
             request.auth.sub,
         );
         return sendSuccess(response, 200, `נטענו ${transactions.length} תנועות`, { transactions });

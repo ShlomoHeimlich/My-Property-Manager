@@ -14,7 +14,6 @@ type PropertiesPageProps = {
   initialNotice?: string;
 };
 
-type CostDraft = { id: string; name: string; amount: string };
 type TransactionDraft = {
   type: "income" | "expense";
   category: string;
@@ -25,20 +24,16 @@ type TransactionDraft = {
 };
 type PropertyDraft = {
   name: string;
-  address: string;
-  city: string;
-  apartmentPrice: string;
-  additionalCosts: CostDraft[];
+  location: string;
+  totalInvestment: string;
   purchaseDate: string;
   notes: string;
 };
 
 const EMPTY_DRAFT: PropertyDraft = {
   name: "",
-  address: "",
-  city: "",
-  apartmentPrice: "",
-  additionalCosts: [],
+  location: "",
+  totalInvestment: "",
   purchaseDate: "",
   notes: "",
 };
@@ -121,10 +116,12 @@ function CategoryPie({
   title,
   type,
   slices,
+  emptyMessage,
 }: {
   title: string;
   type: "income" | "expense";
   slices: Array<{ label: string; amount: number; color: string }>;
+  emptyMessage?: string;
 }) {
   const total = slices.reduce((sum, slice) => sum + slice.amount, 0);
 
@@ -160,10 +157,68 @@ function CategoryPie({
           </ul>
         </div>
       ) : (
-        <p className="pie-empty">
-          אין {type === "income" ? "הכנסות" : "הוצאות"} לשנה שנבחרה
-        </p>
+        <p className="pie-empty">{emptyMessage ?? `אין ${type === "income" ? "הכנסות" : "הוצאות"} לתקופה שנבחרה`}</p>
       )}
+    </section>
+  );
+}
+
+function InvestmentReturnPie({
+  investment,
+  profit,
+}: {
+  investment: number | null;
+  profit: number;
+}) {
+  const slices = [
+    ...(investment && investment > 0
+      ? [{ label: "סך ההשקעה בנכס", amount: investment, color: "#4386b8" }]
+      : []),
+    ...(profit > 0
+      ? [{ label: "רווח נקי בתקופה", amount: profit, color: "#2d7650" }]
+      : profit < 0
+        ? [{ label: "הפסד נקי בתקופה", amount: Math.abs(profit), color: "#c56b51" }]
+        : []),
+  ];
+  const total = slices.reduce((sum, slice) => sum + slice.amount, 0);
+
+  return (
+    <section className="category-pie-panel investment-return-panel">
+      <h3>ההשקעה מול הרווח / ההפסד</h3>
+      {slices.length ? (
+        <div className="category-pie-content">
+          <div
+            className="category-pie"
+            style={{ background: pieGradient(slices) }}
+            role="img"
+            aria-label={`השקעה ורווח או הפסד לתקופה: ${formatCurrency(profit)}`}
+          >
+            <div className="category-pie-center">
+              <span>{profit >= 0 ? "רווח" : "הפסד"}</span>
+              <strong>{formatCurrency(Math.abs(profit))}</strong>
+            </div>
+          </div>
+          <ul className="category-pie-legend">
+            {slices.map((slice) => (
+              <li key={slice.label}>
+                <span className="pie-legend-name">
+                  <i style={{ backgroundColor: slice.color }} />
+                  {slice.label}
+                </span>
+                <span className="pie-legend-value">
+                  {formatCurrency(slice.amount)}
+                  <small>{Math.round((slice.amount / total) * 100)}%</small>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="pie-empty">אין נתוני השקעה לתצוגה</p>
+      )}
+      <p className="pie-caption">
+        הרווח הנקי הוא הכנסות פחות הוצאות. סך ההשקעה מוצג בנפרד ואינו מופחת שוב.
+      </p>
     </section>
   );
 }
@@ -171,14 +226,8 @@ function CategoryPie({
 function propertyToDraft(property: PropertyRecord): PropertyDraft {
   return {
     name: property.name,
-    address: property.address,
-    city: property.city,
-    apartmentPrice: property.apartmentPrice?.toString() ?? "",
-    additionalCosts: (property.additionalCosts ?? []).map((cost) => ({
-      id: cost.id,
-      name: cost.name,
-      amount: cost.amount.toString(),
-    })),
+    location: property.location,
+    totalInvestment: property.totalInvestment?.toString() ?? "",
     purchaseDate: property.purchaseDate,
     notes: property.notes,
   };
@@ -187,12 +236,7 @@ function propertyToDraft(property: PropertyRecord): PropertyDraft {
 function toPropertyInput(draft: PropertyDraft): PropertyInput {
   return {
     ...draft,
-    apartmentPrice: draft.apartmentPrice ? Number(draft.apartmentPrice) : null,
-    additionalCosts: draft.additionalCosts.map((cost) => ({
-      id: cost.id,
-      name: cost.name.trim(),
-      amount: Number(cost.amount),
-    })),
+    totalInvestment: Number(draft.totalInvestment),
   };
 }
 
@@ -205,15 +249,8 @@ function formatCurrency(value: number | null) {
   }).format(value);
 }
 
-function totalPropertyCost(
-  property: Pick<PropertyRecord, "apartmentPrice" | "additionalCosts">,
-) {
-  const additionalTotal = (property.additionalCosts ?? []).reduce(
-    (total, cost) => total + cost.amount,
-    0,
-  );
-  if (property.apartmentPrice === null && additionalTotal === 0) return null;
-  return (property.apartmentPrice ?? 0) + additionalTotal;
+function totalPropertyCost(property: Pick<PropertyRecord, "totalInvestment">) {
+  return property.totalInvestment;
 }
 
 function statusLabel(status: PropertyRecord["status"]) {
@@ -260,25 +297,31 @@ export default function PropertiesPage({
 }: PropertiesPageProps) {
   const [properties, setProperties] = useState<PropertyRecord[]>([]);
   const [selected, setSelected] = useState<PropertyRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PropertyRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [draft, setDraft] = useState<PropertyDraft>(EMPTY_DRAFT);
   const [view, setView] = useState<"list" | "detail" | "form">("list");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [includeInactive, setIncludeInactive] = useState(false);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState(initialNotice);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [detailTab, setDetailTab] = useState<
-    "monthly" | "summary" | "settings"
+    "monthly" | "summary" | "returns" | "settings"
   >("monthly");
   const [selectedMonth, setSelectedMonth] = useState(INITIAL_MONTH);
   const [transactions, setTransactions] = useState<PropertyTransaction[]>([]);
   const [yearlyTransactions, setYearlyTransactions] = useState<
     PropertyTransaction[]
   >([]);
-  const [summaryYear, setSummaryYear] = useState(INITIAL_YEAR);
+  const [summaryYear, setSummaryYear] = useState<number | "all">(INITIAL_YEAR);
   const [loadedSummaryKey, setLoadedSummaryKey] = useState<string | null>(null);
+  const [returnYear, setReturnYear] = useState<number | "all">(INITIAL_YEAR);
+  const [returnTransactions, setReturnTransactions] = useState<
+    PropertyTransaction[]
+  >([]);
+  const [loadedReturnKey, setLoadedReturnKey] = useState<string | null>(null);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [loadedTransactionMonth, setLoadedTransactionMonth] = useState<
     string | null
@@ -296,9 +339,15 @@ export default function PropertiesPage({
   const selectedPropertyId = selected?.id;
 
   useEffect(() => {
+    if (!notice) return;
+    const timeoutId = window.setTimeout(() => setNotice(""), 3000);
+    return () => window.clearTimeout(timeoutId);
+  }, [notice]);
+
+  useEffect(() => {
     let isActive = true;
     propertyApi
-      .list(includeInactive)
+      .list()
       .then((result) => {
         if (isActive) setProperties(result);
       })
@@ -312,7 +361,7 @@ export default function PropertiesPage({
     return () => {
       isActive = false;
     };
-  }, [includeInactive]);
+  }, []);
 
   useEffect(() => {
     if (view !== "detail" || !selectedPropertyId) return;
@@ -346,8 +395,11 @@ export default function PropertiesPage({
       return;
     let isActive = true;
     const summaryKey = `${selectedPropertyId}:${summaryYear}`;
-    propertyApi
-      .yearlyTransactions(selectedPropertyId, summaryYear)
+    const transactionsRequest =
+      summaryYear === "all"
+        ? propertyApi.allTransactions(selectedPropertyId)
+        : propertyApi.yearlyTransactions(selectedPropertyId, summaryYear);
+    transactionsRequest
       .then((result) => {
         if (isActive) {
           setYearlyTransactions(result);
@@ -366,11 +418,42 @@ export default function PropertiesPage({
       isActive = false;
     };
   }, [selectedPropertyId, summaryYear, detailTab, view]);
+
+  useEffect(() => {
+    if (view !== "detail" || detailTab !== "returns" || !selectedPropertyId)
+      return;
+    let isActive = true;
+    const returnsKey = `${selectedPropertyId}:${returnYear}`;
+    const transactionsRequest =
+      returnYear === "all"
+        ? propertyApi.allTransactions(selectedPropertyId)
+        : propertyApi.yearlyTransactions(selectedPropertyId, returnYear);
+    transactionsRequest
+      .then((result) => {
+        if (isActive) {
+          setReturnTransactions(result);
+          setLoadedReturnKey(returnsKey);
+        }
+      })
+      .catch((requestError: Error) => {
+        if (isActive) {
+          setReturnTransactions([]);
+          setLoadedReturnKey(returnsKey);
+          setError(requestError.message);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedPropertyId, returnYear, detailTab, view]);
   const summaryLoading =
     loadedSummaryKey !== `${selectedPropertyId}:${summaryYear}`;
+  const returnsLoading =
+    loadedReturnKey !== `${selectedPropertyId}:${returnYear}`;
 
   const visibleProperties = properties.filter((property) =>
-    `${property.name} ${property.address} ${property.city}`
+    `${property.name} ${property.location}`
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
@@ -391,16 +474,69 @@ export default function PropertiesPage({
     .reduce((total, transaction) => total + transaction.amount, 0);
   const yearlyIncomeSlices = getPieSlices(yearlyTransactions, "income");
   const yearlyExpenseSlices = getPieSlices(yearlyTransactions, "expense");
+  const returnIncome = returnTransactions
+    .filter((transaction) => transaction.type === "income")
+    .reduce((total, transaction) => total + transaction.amount, 0);
+  const returnExpenses = returnTransactions
+    .filter((transaction) => transaction.type === "expense")
+    .reduce((total, transaction) => total + transaction.amount, 0);
+  const returnProfit = returnIncome - returnExpenses;
+  const purchaseYear = Number(selected?.purchaseDate?.slice(0, 4));
+  const returnYearsCount =
+    Number.isInteger(purchaseYear) &&
+    purchaseYear >= 1000 &&
+    purchaseYear <= INITIAL_YEAR
+      ? INITIAL_YEAR - purchaseYear + 1
+      : null;
+  const returnRate =
+    selected?.totalInvestment && selected.totalInvestment > 0
+      ? (returnProfit / selected.totalInvestment) * 100
+      : null;
+  const averageAnnualReturnRate =
+    returnRate === null
+      ? null
+      : returnYear === "all" && returnYearsCount
+        ? returnRate / returnYearsCount
+        : returnRate;
+  const returnIncomeSlices = getPieSlices(returnTransactions, "income");
+  const returnExpenseSlices = getPieSlices(returnTransactions, "expense");
+  const returnsPeriodLabel =
+    returnYear === "all" ? "מאז רכישת הנכס" : `בשנת ${returnYear}`;
+  const summaryMonths =
+    summaryYear === "all"
+      ? [...new Set(yearlyTransactions.map((transaction) => transaction.date.slice(0, 7)))]
+          .sort((left, right) => right.localeCompare(left))
+      : Array.from(
+          { length: 12 },
+          (_, index) => `${summaryYear}-${String(index + 1).padStart(2, "0")}`,
+        );
+  const firstAvailableYear =
+    Number.isInteger(purchaseYear) && purchaseYear >= 1000 && purchaseYear <= INITIAL_YEAR
+      ? purchaseYear
+      : 2000;
   const yearOptions = Array.from(
-    { length: INITIAL_YEAR - 1999 },
+    { length: INITIAL_YEAR - firstAvailableYear + 1 },
     (_, index) => INITIAL_YEAR - index,
   );
+  const monthlyYearOptions = [...new Set([
+    ...yearOptions,
+    Number(selectedMonth.slice(0, 4)),
+  ])].sort((left, right) => right - left);
+  const purchaseDate = selected?.purchaseDate ?? "";
+  const purchaseMonth = purchaseDate.slice(0, 7);
+  const isPurchaseMonthSelected =
+    Boolean(purchaseMonth) && selectedMonth <= purchaseMonth;
 
   function selectMonth(month: string) {
-    setSelectedMonth(month);
+    const boundedMonth =
+      purchaseMonth && month < purchaseMonth ? purchaseMonth : month;
+    const defaultDate = dateForMonth(boundedMonth);
+    const boundedDate =
+      purchaseDate && defaultDate < purchaseDate ? purchaseDate : defaultDate;
+    setSelectedMonth(boundedMonth);
     setTransactionDraft((current) => ({
       ...current,
-      date: dateForMonth(month),
+      date: boundedDate,
     }));
   }
 
@@ -418,14 +554,33 @@ export default function PropertiesPage({
     setView("form");
   }
 
+  function returnToPropertyList() {
+    setSelected(null);
+    setView("list");
+    setError("");
+    setNotice("");
+  }
+
   async function openDetails(property: PropertyRecord) {
     setLoading(true);
     setError("");
     try {
-      setSelected(await propertyApi.get(property.id));
+      const propertyDetails = await propertyApi.get(property.id);
+      setSelected(propertyDetails);
       setTransactions([]);
       setLoadedTransactionMonth(null);
       setDetailTab("monthly");
+      const propertyPurchaseDate = propertyDetails.purchaseDate;
+      const propertyPurchaseMonth = propertyPurchaseDate.slice(0, 7);
+      if (propertyPurchaseMonth && INITIAL_MONTH < propertyPurchaseMonth) {
+        setSelectedMonth(propertyPurchaseMonth);
+        setTransactionDraft((current) => ({
+          ...current,
+          date: propertyPurchaseDate,
+        }));
+      } else {
+        selectMonth(INITIAL_MONTH);
+      }
       setView("detail");
     } catch (requestError) {
       setError(
@@ -435,6 +590,28 @@ export default function PropertiesPage({
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function confirmDeleteProperty() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await propertyApi.delete(deleteTarget.id);
+      setProperties((current) =>
+        current.filter((property) => property.id !== deleteTarget.id),
+      );
+      setNotice(`הנכס "${deleteTarget.name}" נמחק בהצלחה`);
+      setDeleteTarget(null);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "לא ניתן למחוק את הנכס",
+      );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -513,7 +690,7 @@ export default function PropertiesPage({
         ? await propertyApi.update(editingId, input, setNotice)
         : await propertyApi.create(input, setNotice);
       setSelected(saved);
-      setProperties(await propertyApi.list(includeInactive));
+      setProperties(await propertyApi.list());
       setView("detail");
     } catch (requestError) {
       setError(
@@ -533,6 +710,13 @@ export default function PropertiesPage({
           <span className="brand-mark">מ</span>
           <span>מנהל הנכסים</span>
         </a>
+        <button
+          className="secondary-action workspace-home-action"
+          type="button"
+          onClick={returnToPropertyList}
+        >
+          חזרה לרשימת הנכסים שלי
+        </button>
         <div className="account-menu">
           <span className="account-name">{user.name}</span>
           <button type="button" className="quiet-button" onClick={onLogout}>
@@ -613,14 +797,6 @@ export default function PropertiesPage({
                   aria-label="חיפוש נכסים"
                 />
               </label>
-              <label className="checkbox-control">
-                <input
-                  type="checkbox"
-                  checked={includeInactive}
-                  onChange={(event) => setIncludeInactive(event.target.checked)}
-                />
-                <span>כולל ארכיון ונמכרו</span>
-              </label>
               <span className="result-count">
                 {visibleProperties.length} נכסים
               </span>
@@ -634,7 +810,7 @@ export default function PropertiesPage({
                   <thead>
                     <tr>
                       <th>נכס</th>
-                      <th>עלות כוללת</th>
+                      <th>סך ההשקעה</th>
                       <th>סטטוס</th>
                       <th>
                         <span className="sr-only">פעולות</span>
@@ -651,9 +827,7 @@ export default function PropertiesPage({
                             onClick={() => void openDetails(property)}
                           >
                             <strong>{property.name}</strong>
-                            <span>
-                              {property.address}, {property.city}
-                            </span>
+                            <span>{property.location}</span>
                           </button>
                         </td>
                         <td>{formatCurrency(totalPropertyCost(property))}</td>
@@ -665,14 +839,37 @@ export default function PropertiesPage({
                           </span>
                         </td>
                         <td>
-                          <button
-                            className="row-action"
-                            type="button"
-                            onClick={() => void openDetails(property)}
-                            aria-label={`פתיחת ${property.name}`}
-                          >
-                            ←
-                          </button>
+                          <div className="property-row-actions">
+                            <button
+                              className="row-action"
+                              type="button"
+                              onClick={() => startEdit(property)}
+                              aria-label={`עריכת פרטי הנכס ${property.name}`}
+                              title="עריכת פרטי נכס"
+                            >
+                              ✎
+                            </button>
+                            <button
+                              className="row-action delete-row-action"
+                              type="button"
+                              onClick={() => {
+                                setError("");
+                                setDeleteTarget(property);
+                              }}
+                              aria-label={`מחיקת הנכס ${property.name}`}
+                              title="מחיקת נכס"
+                            >
+                              ×
+                            </button>
+                            <button
+                              className="row-action"
+                              type="button"
+                              onClick={() => void openDetails(property)}
+                              aria-label={`פתיחת ${property.name}`}
+                            >
+                              ←
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -712,7 +909,7 @@ export default function PropertiesPage({
                   {statusLabel(selected.status)}
                 </span>
                 <p className="detail-location">
-                  {selected.address}, {selected.city}
+                  {selected.location}
                 </p>
               </div>
               <div className="detail-actions">
@@ -721,7 +918,7 @@ export default function PropertiesPage({
                   type="button"
                   onClick={() => startEdit(selected)}
                 >
-                  עריכת הגדרות הדירה
+                  עריכת פרטי נכס
                 </button>
               </div>
             </div>
@@ -746,13 +943,22 @@ export default function PropertiesPage({
                 סיכום הכנסות והוצאות
               </button>
               <button
+                className={detailTab === "returns" ? "active" : ""}
+                type="button"
+                role="tab"
+                aria-selected={detailTab === "returns"}
+                onClick={() => setDetailTab("returns")}
+              >
+                תשואות
+              </button>
+              <button
                 className={detailTab === "settings" ? "active" : ""}
                 type="button"
                 role="tab"
                 aria-selected={detailTab === "settings"}
                 onClick={() => setDetailTab("settings")}
               >
-                הגדרות הדירה
+                פרטי נכס
               </button>
             </div>
 
@@ -763,6 +969,7 @@ export default function PropertiesPage({
                     className="month-arrow"
                     type="button"
                     onClick={() => selectMonth(shiftMonth(selectedMonth, -1))}
+                    disabled={isPurchaseMonthSelected}
                     aria-label="חודש קודם"
                     title="חודש קודם"
                   >
@@ -779,6 +986,23 @@ export default function PropertiesPage({
                     ›
                   </button>
                 </div>
+                <label className="year-filter monthly-year-filter">
+                  הצגת שנה
+                  <select
+                    value={Number(selectedMonth.slice(0, 4))}
+                    onChange={(event) =>
+                      selectMonth(
+                        `${event.target.value}-${selectedMonth.slice(5, 7)}`,
+                      )
+                    }
+                  >
+                    {monthlyYearOptions.map((year) => (
+                      <option value={year} key={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
                 <div className="monthly-summary">
                   <div className="summary-item income-summary">
@@ -917,7 +1141,6 @@ export default function PropertiesPage({
                             ? "למשל: שכר דירה"
                             : "למשל: תיקון אינסטלציה"
                         }
-                        required
                       />
                     </label>
                     <label className="property-field transaction-amount">
@@ -940,10 +1163,12 @@ export default function PropertiesPage({
                       תאריך
                       <input
                         type="date"
+                        min={purchaseDate}
                         value={transactionDraft.date}
                         onChange={(event) => {
                           const date = event.target.value;
-                          if (date) setSelectedMonth(date.slice(0, 7));
+                          if (!date || (purchaseDate && date < purchaseDate)) return;
+                          setSelectedMonth(date.slice(0, 7));
                           setTransactionDraft((draft) => ({ ...draft, date }));
                         }}
                         required
@@ -1039,16 +1264,25 @@ export default function PropertiesPage({
                 <div className="year-filter-row">
                   <div>
                     <h2>סיכום הכנסות והוצאות</h2>
-                    <p>תמונה שנתית לפי כל התנועות בנכס</p>
+                    <p>
+                      {summaryYear === "all"
+                        ? "סיכום מצטבר מאז רכישת הנכס"
+                        : "תמונה שנתית לפי כל התנועות בנכס"}
+                    </p>
                   </div>
                   <label className="year-filter">
                     הצגת שנה
                     <select
                       value={summaryYear}
                       onChange={(event) =>
-                        setSummaryYear(Number(event.target.value))
+                        setSummaryYear(
+                          event.target.value === "all"
+                            ? "all"
+                            : Number(event.target.value),
+                        )
                       }
                     >
+                      <option value="all">כל השנים (מאז הרכישה)</option>
                       {yearOptions.map((year) => (
                         <option value={year} key={year}>
                           {year}
@@ -1059,11 +1293,19 @@ export default function PropertiesPage({
                 </div>
                 <div className="monthly-summary yearly-summary-cards">
                   <div className="summary-item income-summary">
-                    <span>הכנסות בשנת {summaryYear}</span>
+                    <span>
+                      {summaryYear === "all"
+                        ? "הכנסות מאז הרכישה"
+                        : `הכנסות בשנת ${summaryYear}`}
+                    </span>
                     <strong>{formatCurrency(yearlyIncome)}</strong>
                   </div>
                   <div className="summary-item expense-summary">
-                    <span>הוצאות בשנת {summaryYear}</span>
+                    <span>
+                      {summaryYear === "all"
+                        ? "הוצאות מאז הרכישה"
+                        : `הוצאות בשנת ${summaryYear}`}
+                    </span>
                     <strong>{formatCurrency(yearlyExpenses)}</strong>
                   </div>
                   <div
@@ -1071,8 +1313,8 @@ export default function PropertiesPage({
                   >
                     <span>
                       {yearlyIncome - yearlyExpenses >= 0
-                        ? "רווח שנתי"
-                        : "הפסד שנתי"}
+                        ? summaryYear === "all" ? "רווח מצטבר" : "רווח שנתי"
+                        : summaryYear === "all" ? "הפסד מצטבר" : "הפסד שנתי"}
                     </span>
                     <strong>
                       {formatCurrency(Math.abs(yearlyIncome - yearlyExpenses))}
@@ -1110,8 +1352,7 @@ export default function PropertiesPage({
                         </tr>
                       </thead>
                       <tbody>
-                        {Array.from({ length: 12 }, (_, index) => {
-                          const month = `${summaryYear}-${String(index + 1).padStart(2, "0")}`;
+                        {summaryMonths.map((month) => {
                           const monthTransactions = yearlyTransactions.filter(
                             (transaction) =>
                               transaction.date.startsWith(`${month}-`),
@@ -1163,10 +1404,127 @@ export default function PropertiesPage({
                             </tr>
                           );
                         })}
+                        {!summaryMonths.length && (
+                          <tr>
+                            <td colSpan={5} className="transaction-empty">
+                              אין תנועות מאז רכישת הנכס
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
                 </section>
+              </section>
+            ) : detailTab === "returns" ? (
+              <section className="yearly-summary-view returns-view">
+                <div className="year-filter-row">
+                  <div>
+                    <h2>תשואות הנכס</h2>
+                    <p>הכנסות, הוצאות ורווח {returnsPeriodLabel}</p>
+                  </div>
+                  <label className="year-filter">
+                    תקופה
+                    <select
+                      value={returnYear}
+                      onChange={(event) =>
+                        setReturnYear(
+                          event.target.value === "all"
+                            ? "all"
+                            : Number(event.target.value),
+                        )
+                      }
+                    >
+                      <option value="all">כל השנים (מאז הרכישה)</option>
+                      {yearOptions.map((year) => (
+                        <option value={year} key={year}>
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {returnsLoading ? (
+                  <div className="empty-state">טוענים נתוני תשואה...</div>
+                ) : (
+                  <>
+                    <div className="monthly-summary yearly-summary-cards returns-cards">
+                      <div className="summary-item income-summary">
+                        <span>הכנסות {returnsPeriodLabel}</span>
+                        <strong>{formatCurrency(returnIncome)}</strong>
+                      </div>
+                      <div className="summary-item expense-summary">
+                        <span>הוצאות {returnsPeriodLabel}</span>
+                        <strong>{formatCurrency(returnExpenses)}</strong>
+                      </div>
+                      <div className="summary-item investment-summary">
+                        <span>עלות הנכס הכוללת (כולל הוצאות)</span>
+                        <strong>
+                          {formatCurrency(selected?.totalInvestment ?? null)}
+                        </strong>
+                      </div>
+                      <div
+                        className={`summary-item result-summary ${returnProfit >= 0 ? "positive" : "negative"}`}
+                      >
+                        <span>
+                          {returnProfit >= 0 ? "רווח נקי" : "הפסד נקי"}{" "}
+                          {returnsPeriodLabel}
+                        </span>
+                        <strong>{formatCurrency(Math.abs(returnProfit))}</strong>
+                      </div>
+                      <div className="summary-item return-rate-summary">
+                        <span>
+                          {returnYear === "all"
+                            ? "תשואה מצטברת מאז הרכישה"
+                            : `תשואה שנתית בפועל (${returnYear})`}
+                        </span>
+                        <strong>
+                          {returnRate === null
+                            ? "לא ניתן לחשב"
+                            : `${returnRate.toFixed(2)}%`}
+                        </strong>
+                      </div>
+                      {returnYear === "all" && (
+                        <div className="summary-item return-rate-summary">
+                          <span>
+                            תשואה ממוצעת לשנה
+                            {returnYearsCount
+                              ? ` (${returnYearsCount} שנים)`
+                              : ""}
+                          </span>
+                          <strong>
+                            {averageAnnualReturnRate === null
+                              ? "לא ניתן לחשב"
+                              : `${averageAnnualReturnRate.toFixed(2)}%`}
+                          </strong>
+                        </div>
+                      )}
+                    </div>
+                    <p className="returns-calculation-note">
+                      {returnYear === "all"
+                        ? "הרווח הנקי הוא כלל ההכנסות פחות כלל ההוצאות מאז הרכישה. התשואה המצטברת היא הרווח הנקי חלקי עלות הנכס הכוללת; הממוצע השנתי מחושב בחלוקת התשואה המצטברת במספר השנים הקלנדריות, כולל שנת הרכישה."
+                        : "התשואה השנתית מחושבת לפי הרווח הנקי בפועל בשנה שנבחרה (הכנסות פחות הוצאות), חלקי העלות הכוללת של הנכס כולל הוצאות, כפול 100."}
+                    </p>
+                    <div className="category-pie-grid returns-pie-grid">
+                      <CategoryPie
+                        title={`הרכב ההכנסות ${returnsPeriodLabel}`}
+                        type="income"
+                        slices={returnIncomeSlices}
+                        emptyMessage={`אין הכנסות ${returnsPeriodLabel}`}
+                      />
+                      <CategoryPie
+                        title={`הרכב ההוצאות ${returnsPeriodLabel}`}
+                        type="expense"
+                        slices={returnExpenseSlices}
+                        emptyMessage={`אין הוצאות ${returnsPeriodLabel}`}
+                      />
+                      <InvestmentReturnPie
+                        investment={selected?.totalInvestment ?? null}
+                        profit={returnProfit}
+                      />
+                    </div>
+                  </>
+                )}
               </section>
             ) : (
               <div className="detail-grid">
@@ -1174,40 +1532,19 @@ export default function PropertiesPage({
                   <h2>פרטי הנכס</h2>
                   <dl className="facts-grid">
                     <div>
-                      <dt>מחיר דירה</dt>
-                      <dd>{formatCurrency(selected.apartmentPrice)}</dd>
-                    </div>
-                    <div>
                       <dt>תאריך רכישה</dt>
                       <dd>{selected.purchaseDate || "לא צוין"}</dd>
                     </div>
                   </dl>
                 </section>
                 <section className="detail-section cost-section">
-                  <div className="subsection-heading">
-                    <h2>עלויות הנכס</h2>
-                    <span>
-                      {(selected.additionalCosts ?? []).length} עלויות נוספות
-                    </span>
-                  </div>
-                  <div className="cost-breakdown">
-                    <div className="cost-row">
-                      <span>מחיר דירה (עלות בסיסית)</span>
-                      <strong>{formatCurrency(selected.apartmentPrice)}</strong>
-                    </div>
-                    {(selected.additionalCosts ?? []).map((cost) => (
-                      <div className="cost-row" key={cost.id}>
-                        <span>{cost.name}</span>
-                        <strong>{formatCurrency(cost.amount)}</strong>
-                      </div>
-                    ))}
-                    <div className="cost-row cost-total">
-                      <span>עלות כוללת</span>
-                      <strong>
-                        {formatCurrency(totalPropertyCost(selected))}
-                      </strong>
-                    </div>
-                  </div>
+                  <h2>סך כל ההשקעה בדירה</h2>
+                  <p className="investment-total">
+                    {formatCurrency(totalPropertyCost(selected))}
+                  </p>
+                  <p className="investment-note">
+                    הסכום כולל את כל מה שהושקע בדירה ומשמש לחישוב התשואה.
+                  </p>
                 </section>
                 {selected.notes && (
                   <section className="detail-section notes-section">
@@ -1237,38 +1574,28 @@ export default function PropertiesPage({
                     required
                   />
                 </label>
-                <label className="property-field">
-                  כתובת
+                <label className="property-field field-wide">
+                  כתובת ועיר
                   <input
-                    value={draft.address}
+                    value={draft.location}
                     onChange={(event) =>
-                      setDraft({ ...draft, address: event.target.value })
+                      setDraft({ ...draft, location: event.target.value })
                     }
-                    maxLength={200}
+                    maxLength={300}
                     required
                   />
                 </label>
                 <label className="property-field">
-                  עיר
-                  <input
-                    value={draft.city}
-                    onChange={(event) =>
-                      setDraft({ ...draft, city: event.target.value })
-                    }
-                    maxLength={100}
-                    required
-                  />
-                </label>
-                <label className="property-field">
-                  מחיר דירה (עלות בסיסית, ₪)
+                  סך ההון העצמי וההוצאות שהושקעו בדירה (כולל הכול, ₪)
                   <input
                     type="number"
                     min="0"
                     step="any"
-                    value={draft.apartmentPrice}
+                    value={draft.totalInvestment}
                     onChange={(event) =>
-                      setDraft({ ...draft, apartmentPrice: event.target.value })
+                      setDraft({ ...draft, totalInvestment: event.target.value })
                     }
+                    required
                   />
                 </label>
                 <label className="property-field">
@@ -1279,6 +1606,7 @@ export default function PropertiesPage({
                     onChange={(event) =>
                       setDraft({ ...draft, purchaseDate: event.target.value })
                     }
+                    required
                   />
                 </label>
                 <label className="property-field field-wide">
@@ -1292,107 +1620,6 @@ export default function PropertiesPage({
                     maxLength={5000}
                   />
                 </label>
-              </div>
-            </section>
-
-            <section className="form-section additional-costs-section">
-              <div className="subsection-heading">
-                <div>
-                  <h2>עלויות נוספות</h2>
-                  <p>הוסיפו מס רכישה, שיפוץ, עורך דין או כל הוצאה אחרת.</p>
-                </div>
-                <button
-                  className="cost-add-button"
-                  type="button"
-                  onClick={() =>
-                    setDraft({
-                      ...draft,
-                      additionalCosts: [
-                        ...draft.additionalCosts,
-                        { id: crypto.randomUUID(), name: "", amount: "" },
-                      ],
-                    })
-                  }
-                >
-                  ＋ הוספת עלות
-                </button>
-              </div>
-              {draft.additionalCosts.length > 0 ? (
-                <div className="additional-cost-list">
-                  {draft.additionalCosts.map((cost, index) => (
-                    <div className="additional-cost-row" key={cost.id}>
-                      <label className="property-field">
-                        סוג העלות
-                        <input
-                          value={cost.name}
-                          onChange={(event) =>
-                            setDraft({
-                              ...draft,
-                              additionalCosts: draft.additionalCosts.map(
-                                (item, itemIndex) =>
-                                  itemIndex === index
-                                    ? { ...item, name: event.target.value }
-                                    : item,
-                              ),
-                            })
-                          }
-                          placeholder="למשל: מס רכישה או שיפוץ"
-                          required
-                        />
-                      </label>
-                      <label className="property-field cost-amount-field">
-                        סכום (₪)
-                        <input
-                          type="number"
-                          min="0.01"
-                          step="any"
-                          value={cost.amount}
-                          onChange={(event) =>
-                            setDraft({
-                              ...draft,
-                              additionalCosts: draft.additionalCosts.map(
-                                (item, itemIndex) =>
-                                  itemIndex === index
-                                    ? { ...item, amount: event.target.value }
-                                    : item,
-                              ),
-                            })
-                          }
-                          required
-                        />
-                      </label>
-                      <button
-                        className="cost-remove-button"
-                        type="button"
-                        onClick={() =>
-                          setDraft({
-                            ...draft,
-                            additionalCosts: draft.additionalCosts.filter(
-                              (item) => item.id !== cost.id,
-                            ),
-                          })
-                        }
-                        aria-label={`הסרת עלות ${cost.name || index + 1}`}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="no-additional-costs">לא הוזנו עלויות נוספות</p>
-              )}
-              <div className="cost-total form-cost-total">
-                <span>עלות כוללת משוערת</span>
-                <strong>
-                  {formatCurrency(
-                    (Number(draft.apartmentPrice) || 0) +
-                      draft.additionalCosts.reduce(
-                        (total, cost) => total + (Number(cost.amount) || 0),
-                        0,
-                      ),
-                  )}
-                </strong>
               </div>
             </section>
 
@@ -1417,6 +1644,55 @@ export default function PropertiesPage({
           </form>
         )}
       </div>
+      {deleteTarget && (
+        <div
+          className="delete-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deleting) {
+              setDeleteTarget(null);
+            }
+          }}
+        >
+          <section
+            className="delete-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-modal-title"
+            aria-describedby="delete-modal-description"
+          >
+            <h2 id="delete-modal-title">מחיקת נכס</h2>
+            <p id="delete-modal-description">
+              האם אתה בטוח שאתה רוצה למחוק את הנכס{" "}
+              <strong>{deleteTarget.name}</strong>?
+              <br />
+              כל ההכנסות וההוצאות שלו יימחקו גם כן. לא ניתן לבטל פעולה זו.
+            </p>
+            {error && (
+              <div className="property-alert" role="alert">
+                {error}
+              </div>
+            )}
+            <div className="delete-modal-actions">
+              <button
+                className="delete-confirm-button"
+                type="button"
+                onClick={() => void confirmDeleteProperty()}
+                disabled={deleting}
+              >
+                {deleting ? "מוחקים..." : "כן, למחוק"}
+              </button>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+              >
+                לא, להשאיר
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
